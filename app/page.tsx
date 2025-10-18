@@ -265,8 +265,8 @@ export default function LandingPage() {
               </span>
             </h1>
             <p className="text-xl md:text-2xl text-gray-600 dark:text-gray-300 mb-10 max-w-4xl mx-auto leading-relaxed">
-              Automatically warm up your email accounts with AI-generated conversations. 
-              <strong className="text-gray-900 dark:text-white"> Increase deliverability by 94%</strong> and 
+                    Automatically warm up your email accounts with AI-generated conversations.
+                    <strong className="text-gray-900 dark:text-white"> Increase deliverability by 94%</strong> and
               <strong className="text-gray-900 dark:text-white"> boost open rates by 2.3x</strong> in just 15 days.
             </p>
             <div className="flex flex-col sm:flex-row gap-6 justify-center mb-8">
@@ -296,7 +296,7 @@ export default function LandingPage() {
               </div>
             </div>
           </div>
-          
+
           {/* Results Showcase */}
           <div className="mt-20 relative">
             <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 p-8 max-w-6xl mx-auto">
@@ -311,7 +311,7 @@ export default function LandingPage() {
                   </Card>
                 ))}
               </div>
-              
+
               {/* Process Flow Visualization */}
               <div className="relative">
                 <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-8 text-center">
@@ -321,7 +321,7 @@ export default function LandingPage() {
                   {howItWorks.map((step, index) => (
                     <div key={step.step} className="relative">
                       <div className="text-center">
-                        <div className="w-20 h-20 bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-500 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-xl relative">
+                           <div className="w-20 h-20 bg-gradient-to-r  rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-xl relative">
                           {step.icon}
                           <div className="absolute -top-3 -right-3 w-8 h-8 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center text-sm font-bold text-blue-600 shadow-lg border-2 border-blue-200">
                             {step.step}
@@ -366,7 +366,7 @@ export default function LandingPage() {
               Our comprehensive platform provides all the tools you need to achieve inbox placement rates that your competitors can only dream of
             </p>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {features.map((feature, index) => (
               <Card key={index} className="border-0 shadow-xl hover:shadow-2xl transition-all duration-300 bg-white/90 backdrop-blur-sm dark:bg-gray-700/90 group hover:scale-105">
@@ -408,12 +408,12 @@ export default function LandingPage() {
               Choose the plan that fits your needs. <strong>Up to 50% cheaper</strong> than competitors with better results.
             </p>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
             {pricingPlans.map((plan, index) => (
               <Card key={index} className={`border-0 shadow-2xl hover:shadow-3xl transition-all duration-300 relative transform hover:scale-105 ${
-                plan.popular 
-                  ? 'bg-gradient-to-b from-blue-50 via-purple-50/50 to-indigo-50 dark:from-blue-950/30 dark:via-purple-950/20 dark:to-indigo-950/30 ring-4 ring-blue-500/20' 
+                  plan.popular
+                     ? 'bg-gradient-to-b from-blue-50 via-purple-50/50 to-indigo-50 dark:from-blue-950/30 dark:via-purple-950/20 dark:to-indigo-950/30 ring-4 ring-blue-500/20'
                   : 'bg-white/90 backdrop-blur-sm dark:bg-gray-800/90'
               }`}>
                 {plan.popular && (
@@ -447,7 +447,7 @@ export default function LandingPage() {
                       </Badge>
                     </div>
                   </div>
-                  
+
                   <ul className="space-y-4 mb-8">
                     {plan.features.map((feature, featureIndex) => (
                       <li key={featureIndex} className="flex items-center space-x-3">
@@ -456,12 +456,12 @@ export default function LandingPage() {
                       </li>
                     ))}
                   </ul>
-                  
+
                   <Link href="/auth/signup">
-                    <Button 
+                        <Button
                       className={`w-full py-4 text-lg font-semibold shadow-lg hover:shadow-xl transition-all duration-200 ${
-                        plan.popular 
-                          ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 hover:from-blue-700 hover:via-purple-700 hover:to-indigo-700' 
+                              plan.popular
+                                 ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 hover:from-blue-700 hover:via-purple-700 hover:to-indigo-700'
                           : 'bg-gray-900 hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100'
                       }`}
                     >
@@ -473,7 +473,7 @@ export default function LandingPage() {
               </Card>
             ))}
           </div>
-          
+
           <div className="text-center mt-16">
             <p className="text-gray-600 dark:text-gray-300 mb-6 text-lg">
               All plans include: Enterprise security, 99.9% uptime SLA, and 24/7 priority support
@@ -505,7 +505,7 @@ export default function LandingPage() {
           <p className="text-xl text-blue-100 mb-12">
             Join the companies already dominating their email deliverability
           </p>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {testimonials.map((testimonial, index) => (
               <Card key={index} className="border-0 shadow-2xl bg-white/95 backdrop-blur-sm text-gray-900">
@@ -558,7 +558,7 @@ export default function LandingPage() {
                 <ArrowRight className="ml-3 h-6 w-6" />
               </Button>
             </Link>
-            <Button size="lg" variant="outline" className="border-2 border-white text-white hover:bg-white hover:text-gray-900 text-xl px-12 py-5 transition-all duration-200">
+                 <Button size="lg" variant="outline" className="text-primary text-xl px-12 py-5 transition-all duration-200">
               <Eye className="mr-3 h-6 w-6" />
               Schedule Demo
             </Button>
