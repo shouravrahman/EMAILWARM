@@ -1,7 +1,7 @@
 import { createClient } from "@/utils/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: NextRequest, context: { params: { id: string } }) {
+export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
 	try {
 		const supabase = await createClient();
 		const {
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
 		const { data: campaign, error: campaignError } = await supabase
 			.from("warmup_campaigns")
 			.select("*")
-			.eq("id", context.params.id)
+			.eq("id", (await context.params).id)
 			.eq("user_id", user.id)
 			.single();
 
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest, context: { params: { id: string 
 		const { data: emailLogs, error: logsError } = await supabase
 			.from("email_logs")
 			.select("*, email_accounts(email_address)") // Select email_accounts to get recipient email
-			.eq("campaign_id", context.params.id)
+			.eq("campaign_id", (await context.params).id)
 			.order("sent_at", { ascending: true });
 
 		if (logsError) {

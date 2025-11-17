@@ -3,12 +3,10 @@ import { createClient } from '@/utils/supabase/server';
 import { getAurinkoClient, generateRandomDelay, getNextBusinessHour } from '@/lib/aurinko';
 import { warmupPoolManager } from '@/lib/email-pool';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
 
-    const supabase = await createClient();
+  const supabase = await createClient();
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {

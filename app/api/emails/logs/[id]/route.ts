@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from "@/utils/supabase/server";
 
-export async function GET(
-	request: NextRequest,
-	{ params }: { params: { id: string } }
-) {
-	const supabase = await createClient();
-	try {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
+    const supabase = await createClient();
+    try {
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
@@ -55,12 +53,10 @@ export async function GET(
 	}
 }
 
-export async function PUT(
-	request: NextRequest,
-	{ params }: { params: { id: string } }
-) {
-	const supabase = await createClient();
-	try {
+export async function PUT(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
+    const supabase = await createClient();
+    try {
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();
@@ -143,12 +139,10 @@ export async function PUT(
 	}
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-	const supabase = await createClient();
-	try {
+export async function DELETE(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+    const params = await props.params;
+    const supabase = await createClient();
+    try {
 		const {
 			data: { user },
 		} = await supabase.auth.getUser();

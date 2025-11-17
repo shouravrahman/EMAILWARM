@@ -6,7 +6,7 @@ export async function DELETE(
   context: any
 ) {
   try {
-    const { id } = context.params;
+    const { id } = (await context.params);
     const supabase = await createClient();
 
     // Check if user is authenticated and is admin

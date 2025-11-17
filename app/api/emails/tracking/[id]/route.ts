@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from "@/utils/supabase/server";
 import { getAurinkoClient } from '@/lib/aurinko';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   try {
     const { searchParams } = new URL(request.url);
     const email_id = searchParams.get('email_id');
