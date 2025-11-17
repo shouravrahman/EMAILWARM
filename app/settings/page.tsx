@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Settings as SettingsIcon
 } from 'lucide-react';
+import SubscriptionManager from '@/components/subscription-manager';
 
 export default function SettingsPage() {
   const [user, setUser] = useState<any>(null);
@@ -144,8 +145,9 @@ export default function SettingsPage() {
 
         {/* Settings Tabs */}
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="subscription">Subscription</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
             <TabsTrigger value="preferences">Preferences</TabsTrigger>
           </TabsList>
@@ -282,6 +284,11 @@ export default function SettingsPage() {
                 </Button>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Subscription Tab */}
+          <TabsContent value="subscription" className="space-y-6">
+            {user && <SubscriptionManager userId={user.id} />}
           </TabsContent>
 
           {/* Notifications Tab */}

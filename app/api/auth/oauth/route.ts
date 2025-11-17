@@ -202,7 +202,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    const { provider } = await request.json();
+    const { provider, scopes: customScopes } = await request.json();
     
     // Validate provider
     const supportedProviders = ['gmail', 'outlook', 'yahoo'];
@@ -221,15 +221,24 @@ export async function POST(request: NextRequest) {
 
     // Validate environment variables
     const clientId = process.env.AURINKO_CLIENT_ID;
-    if (!clientId) {
-      return NextResponse.json(
-        { error: 'OAuth configuration not available' },
-        { status: 500 }
-      );
+    const redirectUri = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/auth/oauth`;
+    
+    let scopes: string[];
+    if (customScopes && Array.isArray(customScopes)) {
+      scopes = customScopes;
+    } else {
+      switch (provider.toLowerCase()) {
+        case 'gmail':
+          scopes = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/gmail.modify'];
+          break;
+        case 'outlook':
+          scopes = ['Mail.Read', 'Mail.Send', 'Mail.ReadWrite'];
+          break;
+        default:
+          scopes = ['Mail.Read', 'Mail.Send', 'Mail.ReadWrite'];
+          break;
+      }
     }
-
-    const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/oauth`;
-    const scopes = ['Mail.Read', 'Mail.Send', 'Mail.ReadWrite'];
     
     // Generate auth URL with state for CSRF protection
     const authUrl = AurinkoClient.getAuthUrl(

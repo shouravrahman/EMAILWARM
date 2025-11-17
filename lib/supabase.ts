@@ -1,5 +1,7 @@
+import { createClient } from '@/utils/supabase/client'
+
 // Re-export the client functions for backward compatibility
-export { createClient } from '@/utils/supabase/client'
+export const supabase = createClient();
 
 // Database types for TypeScript
 export type Database = {
@@ -155,12 +157,12 @@ export type Database = {
           user_id: string
           lemonsqueezy_subscription_id: string | null
           lemonsqueezy_customer_id: string | null
-          plan_id: string
           status: string
           current_period_start: string
           current_period_end: string
           cancel_at_period_end: boolean
           trial_ends_at: string | null
+          quantity: number
           created_at: string
           updated_at: string
         }
@@ -169,12 +171,12 @@ export type Database = {
           user_id: string
           lemonsqueezy_subscription_id?: string | null
           lemonsqueezy_customer_id?: string | null
-          plan_id?: string
           status?: string
           current_period_start?: string
           current_period_end?: string
           cancel_at_period_end?: boolean
           trial_ends_at?: string | null
+          quantity?: number
           created_at?: string
           updated_at?: string
         }
@@ -183,12 +185,12 @@ export type Database = {
           user_id?: string
           lemonsqueezy_subscription_id?: string | null
           lemonsqueezy_customer_id?: string | null
-          plan_id?: string
           status?: string
           current_period_start?: string
           current_period_end?: string
           cancel_at_period_end?: boolean
           trial_ends_at?: string | null
+          quantity?: number
           created_at?: string
           updated_at?: string
         }

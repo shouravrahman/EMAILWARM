@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createClient } from "@/utils/supabase/server";
 import { getAurinkoClient } from '@/lib/aurinko';
 
 export async function GET(
@@ -7,47 +7,55 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { searchParams } = new URL(request.url);
-    const email_id = searchParams.get('email_id');
+		const { searchParams } = new URL(request.url);
+		const email_id = searchParams.get("email_id");
 
-    if (!email_id) {
-      return NextResponse.json(
-        { error: 'Email ID required' },
-        { status: 400 }
-      );
-    }
+		if (!email_id) {
+			return NextResponse.json(
+				{ error: "Email ID required" },
+				{ status: 400 }
+			);
+		}
 
-    // Verify user has access to this email account
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+		// Verify user has access to this email account
+		const supabase = await createClient();
+		const {
+			data: { user },
+			error: userError,
+		} = await supabase.auth.getUser();
+		if (userError || !user) {
+			return NextResponse.json(
+				{ error: "Unauthorized" },
+				{ status: 401 }
+			);
+		}
 
-    const { data: emailAccount, error: emailError } = await supabase
-      .from('connected_emails')
-      .select('*')
-      .eq('id', email_id)
-      .eq('user_id', user.id)
-      .single();
+		// Check if user has access to the email account
 
-    if (emailError || !emailAccount) {
-      return NextResponse.json(
-        { error: 'Email account not found' },
-        { status: 404 }
-      );
-    }
+		const { data: emailAccount, error: emailError } = await supabase
+			.from("connected_emails")
+			.select("*")
+			.eq("id", email_id)
+			.eq("user_id", user.id)
+			.single();
 
-    // Get Aurinko client
-    const aurinkoClient = await getAurinkoClient(email_id);
+		if (emailError || !emailAccount) {
+			return NextResponse.json(
+				{ error: "Email account not found" },
+				{ status: 404 }
+			);
+		}
 
-    // Fetch specific message
-    const message = await aurinkoClient.getMessage(params.id);
+		// Get Aurinko client
+		const aurinkoClient = await getAurinkoClient(email_id);
 
-    return NextResponse.json({
-      success: true,
-      message
-    });
+		// Fetch specific message
+		const message = await aurinkoClient.getMessage(params.id);
 
+		return NextResponse.json({
+			success: true,
+			message,
+		});
   } catch (error) {
     console.error('Error in GET /api/emails/messages/[id]:', error);
     return NextResponse.json(
@@ -72,11 +80,14 @@ export async function PUT(
     }
 
     // Verify user has access to this email account
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const supabase = await createClient();
+	const {
+		data: { user },
+		error: userError,
+	} = await supabase.auth.getUser();
+	if (userError || !user) {
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
     const { data: emailAccount, error: emailError } = await supabase
       .from('connected_emails')
       .select('*')

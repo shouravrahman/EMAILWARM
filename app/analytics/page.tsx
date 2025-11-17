@@ -46,6 +46,8 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedCampaign, setSelectedCampaign] = useState('all');
   const [timeRange, setTimeRange] = useState('30');
+  const [activeTab, setActiveTab] = useState('all');
+  const [outreachFunnelData, setOutreachFunnelData] = useState<any>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -95,6 +97,9 @@ export default function AnalyticsPage() {
 
       setCampaigns(campaignsData || []);
       setEmailLogs(logsData);
+
+      // Load outreach funnel data
+      await loadOutreachFunnelData(campaignsData || []);
     } catch (error) {
       console.error('Error loading analytics data:', error);
     } finally {
@@ -102,10 +107,78 @@ export default function AnalyticsPage() {
     }
   };
 
+  const loadOutreachFunnelData = async (campaignsData: any[]) => {
+    try {
+      const outreachCampaigns = campaignsData.filter(c => c.campaign_type === 'outreach');
+      
+      if (outreachCampaigns.length === 0) {
+        setOutreachFunnelData(null);
+        return;
+      }
+
+      const campaignIds = outreachCampaigns.map(c => c.id);
+
+      // Get all prospects for outreach campaigns
+      const prospectListIds = outreachCampaigns
+        .map(c => c.prospect_list_id)
+        .filter(Boolean);
+
+      if (prospectListIds.length === 0) {
+        setOutreachFunnelData(null);
+        return;
+      }
+
+      const { data: prospects, error: prospectsError } = await supabase
+        .from('prospects')
+        .select('status')
+        .in('list_id', prospectListIds);
+
+      if (prospectsError) throw prospectsError;
+
+      // Get email logs for outreach campaigns
+      const { data: logs, error: logsError } = await supabase
+        .from('email_logs')
+        .select('status, open_count, reply_count, prospect_id')
+        .in('campaign_id', campaignIds)
+        .not('prospect_id', 'is', null);
+
+      if (logsError) throw logsError;
+
+      // Calculate funnel metrics
+      const totalProspects = prospects?.length || 0;
+      const contacted = prospects?.filter(p => ['contacted', 'engaged', 'replied'].includes(p.status)).length || 0;
+      const opened = logs?.filter(l => l.open_count > 0).length || 0;
+      const replied = logs?.filter(l => l.reply_count > 0).length || 0;
+
+      setOutreachFunnelData({
+        totalProspects,
+        contacted,
+        opened,
+        replied,
+        contactedRate: totalProspects > 0 ? Math.round((contacted / totalProspects) * 100) : 0,
+        openRate: contacted > 0 ? Math.round((opened / contacted) * 100) : 0,
+        replyRate: opened > 0 ? Math.round((replied / opened) * 100) : 0,
+      });
+    } catch (error) {
+      console.error('Error loading outreach funnel data:', error);
+      setOutreachFunnelData(null);
+    }
+  };
+
   // Calculate metrics
   const calculateMetrics = () => {
+    // Filter by campaign type based on active tab
+    let filteredCampaigns = campaigns;
+    if (activeTab === 'warmup') {
+      filteredCampaigns = campaigns.filter((c: any) => c.campaign_type === 'warmup' || !c.campaign_type);
+    } else if (activeTab === 'outreach') {
+      filteredCampaigns = campaigns.filter((c: any) => c.campaign_type === 'outreach');
+    }
+
+    const campaignIds = filteredCampaigns.map((c: any) => c.id);
+    
     const filteredLogs = selectedCampaign === 'all' 
-      ? emailLogs 
+      ? emailLogs.filter((log: any) => campaignIds.includes(log.campaign_id))
       : emailLogs.filter((log: any) => log.campaign_id === selectedCampaign);
 
     const totalSent = filteredLogs.length;
@@ -198,7 +271,7 @@ export default function AnalyticsPage() {
               Analytics
             </h1>
             <p className="text-gray-600 dark:text-gray-300 mt-1">
-              Track your email warmup performance and engagement metrics
+              Track your email warmup and outreach performance
             </p>
           </div>
           <div className="flex items-center space-x-4">
@@ -208,11 +281,17 @@ export default function AnalyticsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Campaigns</SelectItem>
-                {campaigns.map((campaign: any) => (
-                  <SelectItem key={campaign.id} value={campaign.id}>
-                    {campaign.name}
-                  </SelectItem>
-                ))}
+                {campaigns
+                  .filter((c: any) => {
+                    if (activeTab === 'warmup') return c.campaign_type === 'warmup' || !c.campaign_type;
+                    if (activeTab === 'outreach') return c.campaign_type === 'outreach';
+                    return true;
+                  })
+                  .map((campaign: any) => (
+                    <SelectItem key={campaign.id} value={campaign.id}>
+                      {campaign.name}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
             <Select value={timeRange} onValueChange={setTimeRange}>
@@ -227,6 +306,15 @@ export default function AnalyticsPage() {
             </Select>
           </div>
         </div>
+
+        {/* Campaign Type Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mb-8">
+          <TabsList className="grid w-full max-w-md grid-cols-3">
+            <TabsTrigger value="all">All Campaigns</TabsTrigger>
+            <TabsTrigger value="warmup">Warmup</TabsTrigger>
+            <TabsTrigger value="outreach">Outreach</TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {/* Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -298,6 +386,103 @@ export default function AnalyticsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Outreach Funnel - Only show for outreach tab */}
+        {(activeTab === 'outreach' || activeTab === 'all') && outreachFunnelData && (
+          <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm dark:bg-gray-800/80 mb-8">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold">Outreach Funnel</CardTitle>
+              <CardDescription>Track prospect engagement from contact to reply</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                {/* Funnel Visualization */}
+                <div className="space-y-4">
+                  {/* Total Prospects */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                        <span className="text-sm font-medium">Total Prospects</span>
+                      </div>
+                      <span className="text-lg font-bold">{outreachFunnelData.totalProspects}</span>
+                    </div>
+                    <div className="w-full h-12 bg-gradient-to-r from-blue-500 to-blue-400 rounded-lg flex items-center justify-center text-white font-semibold">
+                      100%
+                    </div>
+                  </div>
+
+                  {/* Contacted */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <span className="text-sm font-medium">Contacted</span>
+                      </div>
+                      <span className="text-lg font-bold">{outreachFunnelData.contacted}</span>
+                    </div>
+                    <div 
+                      className="h-12 bg-gradient-to-r from-green-500 to-green-400 rounded-lg flex items-center justify-center text-white font-semibold transition-all"
+                      style={{ width: `${outreachFunnelData.contactedRate}%` }}
+                    >
+                      {outreachFunnelData.contactedRate}%
+                    </div>
+                  </div>
+
+                  {/* Opened */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                        <span className="text-sm font-medium">Opened</span>
+                      </div>
+                      <span className="text-lg font-bold">{outreachFunnelData.opened}</span>
+                    </div>
+                    <div 
+                      className="h-12 bg-gradient-to-r from-yellow-500 to-yellow-400 rounded-lg flex items-center justify-center text-white font-semibold transition-all"
+                      style={{ width: `${outreachFunnelData.openRate}%` }}
+                    >
+                      {outreachFunnelData.openRate}%
+                    </div>
+                  </div>
+
+                  {/* Replied */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
+                        <span className="text-sm font-medium">Replied</span>
+                      </div>
+                      <span className="text-lg font-bold">{outreachFunnelData.replied}</span>
+                    </div>
+                    <div 
+                      className="h-12 bg-gradient-to-r from-purple-500 to-purple-400 rounded-lg flex items-center justify-center text-white font-semibold transition-all"
+                      style={{ width: `${outreachFunnelData.replyRate}%` }}
+                    >
+                      {outreachFunnelData.replyRate}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* Summary Stats */}
+                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-600">{outreachFunnelData.contactedRate}%</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-300">Contact Rate</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-yellow-600">{outreachFunnelData.openRate}%</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-300">Open Rate</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-purple-600">{outreachFunnelData.replyRate}%</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-300">Reply Rate</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
@@ -422,6 +607,7 @@ export default function AnalyticsPage() {
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-gray-700">
                       <th className="text-left py-3 px-4 font-semibold">Campaign</th>
+                      <th className="text-left py-3 px-4 font-semibold">Type</th>
                       <th className="text-left py-3 px-4 font-semibold">Email</th>
                       <th className="text-left py-3 px-4 font-semibold">Sent</th>
                       <th className="text-left py-3 px-4 font-semibold">Open Rate</th>
@@ -430,7 +616,13 @@ export default function AnalyticsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {campaigns.map((campaign: any) => {
+                    {campaigns
+                      .filter((c: any) => {
+                        if (activeTab === 'warmup') return c.campaign_type === 'warmup' || !c.campaign_type;
+                        if (activeTab === 'outreach') return c.campaign_type === 'outreach';
+                        return true;
+                      })
+                      .map((campaign: any) => {
                       const campaignLogs = emailLogs.filter((log: any) => log.campaign_id === campaign.id);
                       const sent = campaignLogs.length;
                       const opened = campaignLogs.filter((log: any) => log.open_count > 0).length;
@@ -447,6 +639,15 @@ export default function AnalyticsPage() {
                                 {new Date(campaign.start_date).toLocaleDateString()}
                               </p>
                             </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge className={`${
+                              campaign.campaign_type === 'outreach'
+                                ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300'
+                                : 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300'
+                            } border-0 capitalize`}>
+                              {campaign.campaign_type || 'warmup'}
+                            </Badge>
                           </td>
                           <td className="py-3 px-4">
                             <p className="text-gray-900 dark:text-white">{campaign.connected_emails?.email_address}</p>

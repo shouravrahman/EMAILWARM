@@ -32,6 +32,14 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
+  // Add user information to request headers for rate limiting
+  if (user) {
+    supabaseResponse.headers.set('x-user-id', user.id)
+    if (user.email) {
+      supabaseResponse.headers.set('x-user-email', user.email)
+    }
+  }
+
   // Protect authenticated routes
   const protectedPaths = ['/dashboard', '/campaigns', '/emails', '/analytics', '/logs', '/profile', '/settings', '/admin']
   const isProtectedPath = protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))

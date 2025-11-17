@@ -3,46 +3,68 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { createClient } from '@/utils/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Mail, Lock, User, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { FormField } from '@/components/forms/form-field';
+
+// Signup form schema with password confirmation
+const signupSchema = z.object({
+  email: z.string()
+    .min(1, 'Email is required')
+    .email('Invalid email address')
+    .toLowerCase()
+    .trim(),
+  password: z.string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(72, 'Password must be 72 characters or less')
+    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+    .regex(/[0-9]/, 'Password must contain at least one number'),
+  confirmPassword: z.string()
+    .min(1, 'Please confirm your password'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Passwords do not match',
+  path: ['confirmPassword'],
+});
+
+type SignupFormData = z.infer<typeof signupSchema>;
 
 export default function SignupPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isValid },
+  } = useForm<SignupFormData>({
+    resolver: zodResolver(signupSchema),
+    mode: 'onChange',
+    defaultValues: {
+      email: '',
+      password: '',
+      confirmPassword: '',
+    },
+  });
+
+  const handleSignup = async (data: SignupFormData) => {
     setLoading(true);
     setError('');
     setSuccess(false);
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      setLoading(false);
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      setLoading(false);
-      return;
-    }
-
     try {
       const { error } = await supabase.auth.signUp({
-        email,
-        password,
+        email: data.email,
+        password: data.password,
       });
 
       if (error) {
@@ -74,7 +96,7 @@ export default function SignupPage() {
             Start warming up your emails today
           </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSignup}>
+        <form onSubmit={handleSubmit(handleSignup)}>
           <CardContent className="space-y-4">
             {error && (
               <Alert variant="destructive" className="border-red-200 bg-red-50 dark:bg-red-900/20">
@@ -88,57 +110,44 @@ export default function SignupPage() {
                 <AlertDescription>Account created successfully! Redirecting...</AlertDescription>
               </Alert>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 h-12 border-gray-200 focus:border-green-500 focus:ring-green-500"
-                  required
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Create a password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10 h-12 border-gray-200 focus:border-green-500 focus:ring-green-500"
-                  required
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirm Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  placeholder="Confirm your password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="pl-10 h-12 border-gray-200 focus:border-green-500 focus:ring-green-500"
-                  required
-                />
-              </div>
-            </div>
+            
+            <FormField
+              label="Email"
+              name="email"
+              type="email"
+              placeholder="Enter your email"
+              register={register('email')}
+              error={errors.email?.message}
+              required
+              helpText="We'll never share your email"
+            />
+
+            <FormField
+              label="Password"
+              name="password"
+              type="password"
+              placeholder="Create a password"
+              register={register('password')}
+              error={errors.password?.message}
+              required
+              helpText="Must be at least 8 characters with uppercase, lowercase, and number"
+            />
+
+            <FormField
+              label="Confirm Password"
+              name="confirmPassword"
+              type="password"
+              placeholder="Confirm your password"
+              register={register('confirmPassword')}
+              error={errors.confirmPassword?.message}
+              required
+            />
           </CardContent>
           <CardFooter className="space-y-4">
             <Button
               type="submit"
               className="w-full h-12 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
-              disabled={loading || success}
+              disabled={loading || success || !isValid}
             >
               {loading ? (
                 <div className="flex items-center space-x-2">

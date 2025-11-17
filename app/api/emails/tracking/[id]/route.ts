@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createClient } from "@/utils/supabase/server";
 import { getAurinkoClient } from '@/lib/aurinko';
 
 export async function GET(
@@ -18,10 +18,14 @@ export async function GET(
     }
 
     // Verify user has access to this email account
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const supabase = await createClient();
+	const {
+		data: { user },
+		error: userError,
+	} = await supabase.auth.getUser();
+	if (userError || !user) {
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
 
     const { data: emailAccount, error: emailError } = await supabase
       .from('connected_emails')

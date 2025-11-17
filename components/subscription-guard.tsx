@@ -82,7 +82,7 @@ export default function SubscriptionGuard({
           features: getUserPlanLimits(subscriptionStatus.status, subscriptionStatus.plan_id).features,
           currentUsage: {
             emailAccounts: userLimits.current_email_accounts,
-            dailyEmailsSent: 0 // TODO: Calculate from today's logs
+            dailyEmailsSent: userLimits.daily_emails_sent
           }
         });
       }

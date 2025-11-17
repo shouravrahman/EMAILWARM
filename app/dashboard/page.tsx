@@ -7,6 +7,8 @@ import Navbar from '@/components/layout/navbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { SkeletonCard, SkeletonCampaignCard, SkeletonEmailCard } from '@/components/ui/skeleton-card';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import {
   Mail,
   Activity,
@@ -34,6 +36,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  const [subscriptionInfo, setSubscriptionInfo] = useState<any>(null);
+
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -50,6 +54,13 @@ export default function Dashboard() {
 
   const loadDashboardData = async (userId: string) => {
     try {
+      // Load subscription info
+      const { data: subscriptionData, error: subscriptionError } = await supabase
+        .rpc('check_user_limits', { p_user_id: userId });
+
+      if (subscriptionError) throw subscriptionError;
+      setSubscriptionInfo(subscriptionData?.[0] || null);
+
       // Load campaigns
       const { data: campaignsData, error: campaignsError } = await supabase
         .from('warmup_campaigns')
@@ -142,9 +153,46 @@ export default function Dashboard() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Navbar />
-        <div className="flex items-center justify-center h-96">
-          <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-        </div>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Welcome Section Skeleton */}
+          <div className="mb-8 space-y-2 animate-pulse">
+            <div className="h-8 w-64 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="h-4 w-96 bg-gray-200 dark:bg-gray-700 rounded" />
+          </div>
+
+          {/* Stats Cards Skeleton */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+
+          {/* Content Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+            <Card className="lg:col-span-2 border-0 shadow-lg bg-white/80 backdrop-blur-sm dark:bg-gray-800/80">
+              <CardHeader>
+                <div className="h-6 w-40 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <SkeletonCampaignCard />
+                <SkeletonCampaignCard />
+                <SkeletonCampaignCard />
+              </CardContent>
+            </Card>
+
+            <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm dark:bg-gray-800/80">
+              <CardHeader>
+                <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded animate-pulse" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <SkeletonEmailCard />
+                <SkeletonEmailCard />
+                <SkeletonEmailCard />
+              </CardContent>
+            </Card>
+          </div>
+        </main>
       </div>
     );
   }
@@ -165,7 +213,7 @@ export default function Dashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
           <Card className="border-0 shadow-md bg-white/60 backdrop-blur-sm dark:bg-gray-800/60">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-300">
@@ -226,16 +274,43 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {emailAccounts.length}
+                {emailAccounts.length} / {subscriptionInfo?.email_accounts_limit || 0}
               </div>
               <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                 Active accounts
               </p>
             </CardContent>
           </Card>
+
+          {/* Subscription Info Card */}
+          {subscriptionInfo && (
+            <Card className="border-0 shadow-md bg-white/60 backdrop-blur-sm dark:bg-gray-800/60">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                  Subscription Status
+                </CardTitle>
+                <Clock className="h-4 w-4 text-purple-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white capitalize">
+                  {subscriptionInfo.subscription_status}
+                </div>
+                {subscriptionInfo.subscription_status === 'trialing' && (
+                  <p className="text-xs text-green-600 mt-1">
+                    {subscriptionInfo.trial_days_left} days left
+                  </p>
+                )}
+                {subscriptionInfo.subscription_status === 'inactive' && (
+                  <p className="text-xs text-red-600 mt-1">
+                    Trial ended. Upgrade to continue.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
           {/* Recent Campaigns */}
           <Card className="lg:col-span-2 border-0 shadow-lg bg-white/80 backdrop-blur-sm dark:bg-gray-800/80">
             <CardHeader>
@@ -246,11 +321,11 @@ export default function Dashboard() {
                 </div>
                 <Button 
                   size="sm" 
-                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                  className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 min-h-[44px] min-w-[44px]"
                   onClick={() => router.push('/campaigns')}
                 >
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Campaign
+                  <Plus className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">New Campaign</span>
                 </Button>
               </div>
             </CardHeader>
@@ -277,7 +352,7 @@ export default function Dashboard() {
                   {campaigns.map((campaign: any) => (
                     <div
                       key={campaign.id}
-                      className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer gap-3 sm:gap-0"
                       onClick={() => router.push('/campaigns')}
                     >
                       <div className="flex items-center space-x-3">
@@ -286,17 +361,17 @@ export default function Dashboard() {
                             <Mail className="h-5 w-5 text-white" />
                           </div>
                         </div>
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
                             {campaign.name}
                           </h4>
-                          <p className="text-xs text-gray-600 dark:text-gray-300">
+                          <p className="text-xs text-gray-600 dark:text-gray-300 truncate">
                             {campaign.connected_emails?.email_address}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-3">
-                        <Badge className={`${getStatusColor(campaign.status)} border-0`}>
+                      <div className="flex items-center justify-between sm:justify-end sm:space-x-3">
+                        <Badge className={`${getStatusColor(campaign.status)} border-0 text-xs`}>
                           <div className="flex items-center space-x-1">
                             {getStatusIcon(campaign.status)}
                             <span className="capitalize">{campaign.status}</span>
@@ -326,6 +401,7 @@ export default function Dashboard() {
                 <Button 
                   size="sm" 
                   variant="outline"
+                  className="min-h-[44px] min-w-[44px]"
                   onClick={() => router.push('/emails')}
                 >
                   <Plus className="h-4 w-4" />
@@ -382,29 +458,29 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="mt-8">
+        <div className="mt-6 sm:mt-8">
           <Card className="border-0 shadow-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-1">
                     Ready to get started?
                   </h3>
-                  <p className="text-gray-600 dark:text-gray-300">
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
                     Set up your first warmup campaign in just a few minutes
                   </p>
                 </div>
-                <div className="flex space-x-3">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                   <Button 
                     variant="outline" 
-                    className="border-blue-200 hover:bg-blue-50"
+                    className="border-blue-200 hover:bg-blue-50 min-h-[44px] w-full sm:w-auto"
                     onClick={() => router.push('/analytics')}
                   >
                     <BarChart3 className="h-4 w-4 mr-2" />
                     View Analytics
                   </Button>
                   <Button 
-                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 min-h-[44px] w-full sm:w-auto"
                     onClick={() => router.push('/campaigns')}
                   >
                     <Plus className="h-4 w-4 mr-2" />

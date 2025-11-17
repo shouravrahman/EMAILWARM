@@ -7,11 +7,10 @@ import Navbar from '@/components/layout/navbar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import SmtpForm from '@/components/smtp-form';
 import {
   Mail,
   Plus,
@@ -20,33 +19,24 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
-  ExternalLink,
-  Shield,
-  Zap,
-  Globe,
-  Search,
-  Eye,
-  Archive,
-  Star,
-  Reply,
-  Forward,
-  MoreHorizontal
+  Server,
 } from 'lucide-react';
 
 export default function EmailsPage() {
   const [user, setUser] = useState<any>(null);
   const supabase = createClient();
-  const [emailAccounts, setEmailAccounts] = useState([]);
+  const [emailAccounts, setEmailAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [selectedEmail, setSelectedEmail] = useState<any | null>(null);
   const [creating, setCreating] = useState(false);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [newEmail, setNewEmail] = useState({
-    email_address: '',
-    provider: 'gmail'
-  });
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const [subscriptionInfo, setSubscriptionInfo] = useState<any>(null);
 
   useEffect(() => {
     const getUser = async () => {
@@ -60,72 +50,96 @@ export default function EmailsPage() {
     };
 
     getUser();
+  }, [supabase, router]);
 
-    // Check for OAuth success/error
+  useEffect(() => {
     const success = searchParams.get('success');
     const error = searchParams.get('error');
     
     if (success === 'connected') {
-      // Refresh the page to show new connection
-      window.location.reload();
+      // Consider showing a success toast instead of reloading
     } else if (error) {
       console.error('OAuth error:', error);
       setError(`Connection failed: ${error}`);
     }
-  }, [router, searchParams]);
+  }, [searchParams]);
 
   const loadEmailAccounts = async (userId: string) => {
     try {
+      // Load subscription info
+      const { data: subscriptionData, error: subscriptionError } = await supabase
+        .rpc('check_user_limits', { p_user_id: userId });
+
+      if (subscriptionError) throw subscriptionError;
+      setSubscriptionInfo(subscriptionData?.[0] || null);
+
       const { data, error } = await supabase
         .from('connected_emails')
-        .select('*')
+        .select(`
+          *,
+          warmup_campaigns (
+            id,
+            status
+          )
+        `)
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
       setEmailAccounts(data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading email accounts:', error);
-      setError('Failed to load email accounts');
+      setError(`Failed to load email accounts: ${error.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const createEmailAccount = async () => {
-    if (!user || !newEmail.email_address) {
-      setError('Please enter an email address');
-      return;
-    }
-
+  const handleOAuthConnect = async (provider: string) => {
     setCreating(true);
     setError('');
-
     try {
-      // For demo purposes, create a mock email account
-      const { data, error } = await supabase
-        .from('connected_emails')
-        .insert([{
-          user_id: user.id,
-          email_address: newEmail.email_address,
-          provider: newEmail.provider,
-          oauth_tokens: { mock: true }, // In real app, this would be OAuth tokens
-          status: 'active'
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setConnectDialogOpen(false);
-      setNewEmail({ email_address: '', provider: 'gmail' });
-      await loadEmailAccounts(user.id);
-    } catch (error) {
-      console.error('Error creating email account:', error);
-      setError('Failed to connect email account');
+      const response = await fetch('/api/auth/oauth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      });
+      const { authUrl, error } = await response.json();
+      if (error) {
+        throw new Error(error);
+      }
+      if (authUrl) {
+        window.location.href = authUrl;
+      } else {
+        throw new Error('Could not get authorization URL.');
+      }
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const [syncing, setSyncing] = useState<string | null>(null);
+
+  const handleSync = async (emailId: string) => {
+    setSyncing(emailId);
+    setError('');
+    try {
+      const response = await fetch(`/api/emails/${emailId}/sync`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        const { error } = await response.json();
+        throw new Error(error);
+      }
+      // Optionally, show a success toast
+      if (user) await loadEmailAccounts(user.id);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSyncing(null);
     }
   };
 
@@ -134,6 +148,8 @@ export default function EmailsPage() {
       return;
     }
 
+    setDisconnecting(emailId);
+    setError('');
     try {
       const { error } = await supabase
         .from('connected_emails')
@@ -142,10 +158,13 @@ export default function EmailsPage() {
 
       if (error) throw error;
 
-      await loadEmailAccounts(user.id);
-    } catch (error) {
+      // Optionally, show a success toast
+      if (user) await loadEmailAccounts(user.id);
+    } catch (error: any) {
       console.error('Error disconnecting email:', error);
-      setError('Failed to disconnect email account');
+      setError(`Failed to disconnect email account: ${error.message}`);
+    } finally {
+      setDisconnecting(null);
     }
   };
 
@@ -157,6 +176,8 @@ export default function EmailsPage() {
         return <Mail className="h-5 w-5 text-blue-500" />;
       case 'yahoo':
         return <Mail className="h-5 w-5 text-purple-500" />;
+      case 'smtp':
+        return <Server className="h-5 w-5 text-gray-500" />;
       default:
         return <Mail className="h-5 w-5 text-gray-500" />;
     }
@@ -181,21 +202,18 @@ export default function EmailsPage() {
       name: 'Gmail',
       description: 'Connect your Gmail account',
       icon: <Mail className="h-8 w-8 text-red-500" />,
-      color: 'from-red-500 to-pink-500'
     },
     {
       id: 'outlook',
       name: 'Outlook',
       description: 'Connect your Outlook account',
       icon: <Mail className="h-8 w-8 text-blue-500" />,
-      color: 'from-blue-500 to-indigo-500'
     },
     {
       id: 'yahoo',
       name: 'Yahoo',
       description: 'Connect your Yahoo account',
       icon: <Mail className="h-8 w-8 text-purple-500" />,
-      color: 'from-purple-500 to-pink-500'
     }
   ];
 
@@ -215,7 +233,6 @@ export default function EmailsPage() {
       <Navbar />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -227,7 +244,10 @@ export default function EmailsPage() {
           </div>
           <Dialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700">
+              <Button 
+                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                disabled={emailAccounts.length >= (subscriptionInfo?.email_accounts_limit || 0)}
+              >
                 <Plus className="h-4 w-4 mr-2" />
                 Connect Email
               </Button>
@@ -236,70 +256,66 @@ export default function EmailsPage() {
               <DialogHeader>
                 <DialogTitle>Connect Email Account</DialogTitle>
                 <DialogDescription>
-                  Add a new email account for warmup campaigns
+                  Choose your connection method
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email Address *</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="Enter email address"
-                    value={newEmail.email_address}
-                    onChange={(e) => setNewEmail({ ...newEmail, email_address: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="provider">Provider</Label>
-                  <Select value={newEmail.provider} onValueChange={(value) => setNewEmail({ ...newEmail, provider: value })}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="gmail">Gmail</SelectItem>
-                      <SelectItem value="outlook">Outlook</SelectItem>
-                      <SelectItem value="yahoo">Yahoo</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-900/20">
-                  <Shield className="h-4 w-4" />
-                  <AlertDescription>
-                    This is a demo version. In production, OAuth authentication would be used for secure connection.
-                  </AlertDescription>
-                </Alert>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setConnectDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={createEmailAccount}
-                  disabled={creating}
-                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-                >
-                  {creating ? (
-                    <div className="flex items-center space-x-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Connecting...</span>
-                    </div>
-                  ) : (
-                    'Connect Account'
-                  )}
-                </Button>
-              </DialogFooter>
+              <Tabs defaultValue="oauth" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="oauth">OAuth</TabsTrigger>
+                  <TabsTrigger value="smtp">SMTP</TabsTrigger>
+                </TabsList>
+                <TabsContent value="oauth">
+                  <div className="space-y-4 py-4">
+                    {providers.map((provider) => (
+                      <Button
+                        key={provider.id}
+                        variant="outline"
+                        className="w-full justify-start h-16"
+                        onClick={() => handleOAuthConnect(provider.id)}
+                        disabled={creating || emailAccounts.length >= (subscriptionInfo?.email_accounts_limit || 0)}
+                      >
+                        <div className="flex items-center space-x-4">
+                          {provider.icon}
+                          <div>
+                            <p className="font-semibold">{provider.name}</p>
+                            <p className="text-xs text-gray-500">{provider.description}</p>
+                          </div>
+                        </div>
+                      </Button>
+                    ))}
+                  </div>
+                </TabsContent>
+                <TabsContent value="smtp">
+                  <SmtpForm onEmailConnected={() => {
+                    setConnectDialogOpen(false);
+                    if (user) loadEmailAccounts(user.id);
+                  }} />
+                </TabsContent>
+              </Tabs>
             </DialogContent>
           </Dialog>
         </div>
 
-        {/* Error Alert */}
+        {subscriptionInfo && (
+          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                You have {emailAccounts.length} of {subscriptionInfo.email_accounts_limit} email accounts connected.
+              </p>
+              {emailAccounts.length >= subscriptionInfo.email_accounts_limit && (
+                <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                  Upgrade your plan to connect more email accounts.
+                </p>
+              )}
+            </div>
+            {emailAccounts.length >= subscriptionInfo.email_accounts_limit && (
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                Upgrade Plan
+              </Button>
+            )}
+          </div>
+        )}
+
         {error && (
           <Alert variant="destructive" className="mb-6">
             <AlertTriangle className="h-4 w-4" />
@@ -336,8 +352,8 @@ export default function EmailsPage() {
                       <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
                         {getProviderIcon(email.provider)}
                       </div>
-                      <div>
-                        <CardTitle className="text-lg">{email.email_address}</CardTitle>
+                      <div className="min-w-0 flex-1">
+                        <CardTitle className="text-lg truncate">{email.email_address}</CardTitle>
                         <CardDescription className="text-xs capitalize">
                           {email.provider}
                         </CardDescription>
@@ -366,13 +382,51 @@ export default function EmailsPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
+                  {email.warmup_campaigns && email.warmup_campaigns.length > 0 && (
+                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-gray-600 dark:text-gray-300">Warmup Status</p>
+                          <Badge className={`${getStatusColor(email.warmup_campaigns[0].status)} border-0`}>
+                            {email.warmup_campaigns[0].status}
+                          </Badge>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => router.push(`/campaigns`)}
+                        >
+                          Go to campaign
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <div className="flex space-x-2">
-                      <Button size="sm" variant="outline">
-                        <RefreshCw className="h-3 w-3 mr-1" />
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleSync(email.id)}
+                        disabled={syncing === email.id}
+                        className="flex-1 sm:flex-none"
+                      >
+                        {syncing === email.id ? (
+                          <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                        )}
                         Sync
                       </Button>
-                      <Button size="sm" variant="outline">
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedEmail(email);
+                          setSettingsDialogOpen(true);
+                        }}
+                        className="flex-1 sm:flex-none"
+                      >
                         <Settings className="h-3 w-3 mr-1" />
                         Settings
                       </Button>
@@ -381,9 +435,14 @@ export default function EmailsPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => disconnectEmail(email.id)}
+                      disabled={disconnecting === email.id}
                       className="text-red-600 hover:text-red-700"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      {disconnecting === email.id ? (
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </CardContent>
@@ -392,44 +451,19 @@ export default function EmailsPage() {
           </div>
         )}
 
-        {/* Info Section */}
-        <div className="mt-8">
-          <Card className="border-0 shadow-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20">
-            <CardContent className="p-6">
-              <div className="flex items-start space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Shield className="h-6 w-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                    Secure Email Integration
-                  </h3>
-                  <p className="text-gray-600 dark:text-gray-300 mb-4">
-                    Your email credentials are encrypted and stored securely. We only access what's necessary for warmup functionality.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      <span>End-to-end encryption</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      <span>OAuth 2.0 authentication</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      <span>Minimal permissions</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      <span>Revoke access anytime</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Email Settings</DialogTitle>
+              <DialogDescription>
+                {selectedEmail?.email_address}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <p>Provider: {selectedEmail?.provider}</p>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );

@@ -55,6 +55,7 @@ export default function Navbar() {
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: BarChart3 },
     { href: '/campaigns', label: 'Campaigns', icon: Activity },
+    { href: '/prospects', label: 'Prospects', icon: User },
     { href: '/emails', label: 'Emails', icon: Mail },
     { href: '/logs', label: 'Email Logs', icon: FileText },
     { href: '/analytics', label: 'Analytics', icon: BarChart3 },
@@ -106,14 +107,14 @@ export default function Navbar() {
           <div className="flex items-center space-x-4">
             <Button
               size="sm"
-              className="hidden sm:flex items-center space-x-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+              className="hidden sm:flex items-center space-x-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 min-h-[44px]"
               onClick={() => router.push('/campaigns')}
             >
               <Plus className="h-4 w-4" />
               <span>New Campaign</span>
             </Button>
 
-            <Button variant="ghost" size="sm" className="relative">
+            <Button variant="ghost" size="sm" className="relative min-h-[44px] min-w-[44px]">
               <Bell className="h-5 w-5" />
               <Badge
                 variant="destructive"
@@ -126,8 +127,8 @@ export default function Navbar() {
             {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                  <Avatar className="h-8 w-8">
+                <Button variant="ghost" className="relative min-h-[44px] min-w-[44px] rounded-full p-0">
+                  <Avatar className="h-10 w-10">
                     <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
                       {user.email?.charAt(0).toUpperCase()}
                     </AvatarFallback>
@@ -196,10 +197,10 @@ export default function Navbar() {
             <Button
               variant="ghost"
               size="sm"
-              className="md:hidden"
+              className="md:hidden min-h-[44px] min-w-[44px]"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </Button>
           </div>
         </div>
@@ -214,27 +215,27 @@ export default function Navbar() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    className={`flex items-center space-x-2 px-3 py-3 rounded-lg text-base font-medium transition-all duration-200 min-h-[44px] ${
                       isActive(item.href)
                         ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
                         : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-300 dark:hover:text-white dark:hover:bg-gray-800'
                     }`}
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    <Icon className="h-4 w-4" />
+                    <Icon className="h-5 w-5" />
                     <span>{item.label}</span>
                   </Link>
                 );
               })}
               <Button
                 size="sm"
-                className="w-full mt-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                className="w-full mt-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 min-h-[44px]"
                 onClick={() => {
                   router.push('/campaigns');
                   setMobileMenuOpen(false);
                 }}
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="h-5 w-5 mr-2" />
                 New Campaign
               </Button>
             </div>

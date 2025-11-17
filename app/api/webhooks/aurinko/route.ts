@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createClient } from "@/utils/supabase/server";
 import crypto from 'crypto';
+import { warmupPoolManager } from "@/lib/email-pool";
+import { getAurinkoClient } from "@/lib/aurinko";
 
 // Verify webhook signature
 function verifyWebhookSignature(signature: string | null, body: string): boolean {
@@ -35,12 +37,12 @@ export async function POST(request: NextRequest) {
 
     console.log('Received Aurinko webhook:', { event_type, message_id, account_id });
 
-    // Find the email log entry
-    const { data: emailLog, error: findError } = await supabase
-      .from('email_logs')
-      .select('*')
-      .eq('message_id', message_id)
-      .single();
+    const supabase = await createClient();
+	const { data: emailLog, error: findError } = await supabase
+		.from("email_logs")
+		.select("*")
+		.eq("message_id", message_id)
+		.single();
 
     if (findError || !emailLog) {
       console.error('Email log not found for message_id:', message_id);
@@ -52,9 +54,9 @@ export async function POST(request: NextRequest) {
 
     switch (event_type) {
       case 'email.delivered':
-        updateData = { 
+        updateData = {
           status: 'delivered',
-          delivered_at: timestamp 
+          delivered_at: timestamp
         };
         break;
 
@@ -79,6 +81,9 @@ export async function POST(request: NextRequest) {
         if (data && data.reply_content) {
           updateData.reply_data = data;
         }
+
+        // Continue the conversation
+        await continueConversation(emailLog);
         break;
 
       case 'email.bounced':
@@ -163,9 +168,10 @@ export async function POST(request: NextRequest) {
 
 async function checkCampaignHealth(campaignId: string) {
   try {
-    // Get recent email logs for this campaign (last 24 hours)
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    
+    const supabase = await createClient();
+	const oneDayAgo = new Date();
+	oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+
     const { data: recentLogs, error } = await supabase
       .from('email_logs')
       .select('status')
@@ -186,16 +192,74 @@ async function checkCampaignHealth(campaignId: string) {
     // Pause campaign if bounce rate > 5% or spam rate > 1%
     if (bounceRate > 5 || spamRate > 1) {
       await supabase
-        .from('warmup_campaigns')
-        .update({ 
-          status: 'paused',
-          pause_reason: `High ${bounceRate > 5 ? 'bounce' : 'spam'} rate detected`
-        })
-        .eq('id', campaignId);
+			.from("warmup_campaigns")
+			.update({
+				status: "paused",
+				pause_reason: `High ${
+					bounceRate > 5 ? "bounce" : "spam"
+				} rate detected`,
+			})
+			.eq("id", campaignId);
 
       console.log(`Campaign ${campaignId} paused due to high ${bounceRate > 5 ? 'bounce' : 'spam'} rate`);
     }
   } catch (error) {
     console.error('Error checking campaign health:', error);
   }
+}
+
+async function continueConversation(emailLog: any) {
+	try {
+		const supabase = await createClient();
+		const { data: senderAccount, error: senderError } = await supabase
+			.from("connected_emails")
+			.select("email")
+			.eq("id", emailLog.email_id)
+			.single();
+
+		if (senderError || !senderAccount) {
+			console.error(
+				"Could not find sender email account for emailLog:",
+				emailLog.id
+			);
+			return;
+		}
+		const senderEmail = senderAccount.email;
+		const recipientEmail = emailLog.recipient;
+
+		// 2. Find the conversation
+		const { data: conversation, error: convError } = await supabase
+			.from("warmup_conversations")
+			.select("*")
+			.or(
+				`and(sender_email.eq.${senderEmail},recipient_email.eq.${recipientEmail}),and(sender_email.eq.${recipientEmail},recipient_email.eq.${senderEmail})`
+			)
+			.single();
+
+		if (convError || !conversation) {
+			console.error("Conversation not found for emailLog:", emailLog.id);
+			// Optionally, create a new conversation here if it's the first reply
+			return;
+		}
+
+		// 3. Generate the reply
+		// The original sender is now the recipient of the reply, and vice-versa.
+		// We need to decide who sends the next email. Let's assume the user's connected email always replies.
+		const reply = await warmupPoolManager.generateConversationEmail(
+			conversation.id,
+			"reply"
+		);
+
+		// 4. Send the reply from the user's connected account
+		const aurinkoClient = await getAurinkoClient(emailLog.email_id);
+		await aurinkoClient.sendMessage({
+			subject: reply.subject,
+			body: reply.body,
+			to: [{ address: emailLog.recipient }], // The reply goes to the original recipient
+		});
+
+		console.log(`Sent reply for conversation ${conversation.id}`);
+	} catch (error) {
+		console.error("Error continuing conversation:", error);
+	}
 }

@@ -355,14 +355,20 @@ export class AurinkoClient {
 }
 
 // Enhanced token management with encryption
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-change-in-production';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+if (!ENCRYPTION_KEY) {
+  throw new Error('ENCRYPTION_KEY is not set in environment variables');
+}
 
 function encrypt(text: string): string {
   try {
+    if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32) {
+      throw new Error('ENCRYPTION_KEY must be 32 characters long');
+    }
     const algorithm = 'aes-256-gcm';
     const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
     const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipher(algorithm, key);
+    const cipher = crypto.createCipheriv(algorithm, key, iv);
     
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
@@ -377,6 +383,9 @@ function encrypt(text: string): string {
 
 function decrypt(text: string): string {
   try {
+    if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32) {
+      throw new Error('ENCRYPTION_KEY must be 32 characters long');
+    }
     const algorithm = 'aes-256-gcm';
     const key = crypto.scryptSync(ENCRYPTION_KEY, 'salt', 32);
     const parts = text.split(':');
@@ -389,7 +398,7 @@ function decrypt(text: string): string {
     const authTag = Buffer.from(parts[1], 'hex');
     const encryptedText = parts[2];
     
-    const decipher = crypto.createDecipher(algorithm, key);
+    const decipher = crypto.createDecipheriv(algorithm, key, iv);
     decipher.setAuthTag(authTag);
     
     let decrypted = decipher.update(encryptedText, 'hex', 'utf8');

@@ -190,6 +190,18 @@ Best regards,
           if (additionalData?.bounceReason) {
             updateData.bounce_reason = additionalData.bounceReason;
           }
+          // Track bounce in warmup pool if recipient is a warmup email
+          const { data: logData } = await supabase
+            .from('email_logs')
+            .select('recipient')
+            .eq('message_id', messageId)
+            .single();
+          
+          if (logData?.recipient) {
+            // Import dynamically to avoid circular dependency
+            const { warmupPoolManager } = await import('./email-pool');
+            await warmupPoolManager.trackBounce(logData.recipient, additionalData?.bounceReason);
+          }
           break;
         case 'spam':
           updateData.spam_at = now;
@@ -291,7 +303,7 @@ Best regards,
     return {
       subject,
       body,
-      recipient: this.generateWarmupEmail()
+      recipient: this.generateRandomWarmupRecipientEmail()
     };
   }
 
@@ -315,7 +327,7 @@ Best regards,
     return industries[Math.floor(Math.random() * industries.length)];
   }
 
-  private static generateWarmupEmail(): string {
+  private static generateRandomWarmupRecipientEmail(): string {
     const domains = ['warmup-pool.com', 'email-warmup.net', 'sender-rep.org', 'deliverability-test.com'];
     const domain = domains[Math.floor(Math.random() * domains.length)];
     const username = `warmup-${Math.random().toString(36).substr(2, 8)}`;
@@ -411,6 +423,181 @@ Best regards,
       }
     } catch (error) {
       console.error('Error simulating email engagement:', error);
+    }
+  }
+
+  /**
+   * Send outreach email to a prospect
+   * Generates personalized content and queues for sending
+   */
+  static async sendOutreachEmail(data: {
+    campaignId: string;
+    prospectId: string;
+    emailAccountId: string;
+    personalizationTemplate: string;
+    senderInfo?: {
+      name?: string;
+      company?: string;
+      title?: string;
+    };
+  }): Promise<{
+    success: boolean;
+    messageId?: string;
+    queueId?: string;
+    error?: string;
+  }> {
+    try {
+      // Fetch prospect data
+      const { data: prospect, error: prospectError } = await supabase
+        .from('prospects')
+        .select('*')
+        .eq('id', data.prospectId)
+        .single();
+
+      if (prospectError || !prospect) {
+        throw new Error('Prospect not found');
+      }
+
+      // Check if prospect is in suppression list
+      const { data: suppressed } = await supabase
+        .from('suppression_list')
+        .select('id')
+        .eq('email', prospect.email)
+        .single();
+
+      if (suppressed) {
+        throw new Error('Recipient is unsubscribed');
+      }
+
+      // Generate personalized email using AI
+      const { generatePersonalizedEmail } = await import('./ai-personalization');
+      const { subject, body } = await generatePersonalizedEmail({
+        prospect: {
+          email: prospect.email,
+          first_name: prospect.first_name,
+          last_name: prospect.last_name,
+          company: prospect.company,
+          title: prospect.title,
+          custom_field_1: prospect.custom_field_1,
+          custom_field_2: prospect.custom_field_2,
+          custom_field_3: prospect.custom_field_3,
+        },
+        template: data.personalizationTemplate,
+        senderInfo: data.senderInfo,
+      });
+
+      // Convert plain text body to HTML if needed
+      const htmlBody = body.includes('<') ? body : body.replace(/\n/g, '<br>');
+
+      // Add to email queue
+      const { EmailQueue } = await import('./email-queue');
+      const queueId = await EmailQueue.enqueue({
+        campaignId: data.campaignId,
+        emailAccountId: data.emailAccountId,
+        recipient: prospect.email,
+        subject,
+        body,
+        htmlBody,
+        priority: 1, // Outreach emails have higher priority
+        metadata: {
+          prospect_id: data.prospectId,
+          personalized: true,
+          template_used: true,
+        },
+      });
+
+      if (!queueId) {
+        throw new Error('Failed to queue email');
+      }
+
+      // Update prospect status to 'contacted'
+      await supabase
+        .from('prospects')
+        .update({
+          status: 'contacted',
+          last_contacted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', data.prospectId);
+
+      return {
+        success: true,
+        queueId,
+        messageId: `queued_${queueId}`,
+      };
+    } catch (error) {
+      console.error('Error sending outreach email:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Simulate outreach email engagement and update prospect status
+   */
+  private static async simulateOutreachEngagement(
+    messageId: string,
+    prospectId: string
+  ): Promise<void> {
+    try {
+      // Simulate delivery
+      await this.updateEmailStatus(messageId, 'delivered');
+
+      // Random chance of opening (60% for outreach)
+      if (Math.random() < 0.6) {
+        setTimeout(async () => {
+          await this.updateEmailStatus(messageId, 'opened', { openCount: 1 });
+          
+          // Update prospect status to 'engaged'
+          await supabase
+            .from('prospects')
+            .update({
+              status: 'engaged',
+              engagement_score: 1,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', prospectId);
+
+          // Random chance of reply (10% for outreach)
+          if (Math.random() < 0.1) {
+            setTimeout(async () => {
+              await this.updateEmailStatus(messageId, 'replied', { replyCount: 1 });
+              
+              // Update prospect status to 'replied'
+              await supabase
+                .from('prospects')
+                .update({
+                  status: 'replied',
+                  engagement_score: 3,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', prospectId);
+            }, Math.random() * 30000 + 10000);
+          }
+        }, Math.random() * 15000 + 5000);
+      }
+
+      // Small chance of bounce (3% for outreach)
+      if (Math.random() < 0.03) {
+        setTimeout(async () => {
+          await this.updateEmailStatus(messageId, 'bounced', {
+            bounceReason: 'Invalid recipient',
+          });
+          
+          // Update prospect status to 'bounced'
+          await supabase
+            .from('prospects')
+            .update({
+              status: 'bounced',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', prospectId);
+        }, Math.random() * 5000 + 1000);
+      }
+    } catch (error) {
+      console.error('Error simulating outreach engagement:', error);
     }
   }
 }

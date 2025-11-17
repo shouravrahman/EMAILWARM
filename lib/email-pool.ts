@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { createClient } from '@/utils/supabase/server';
 import { getAIService } from './ai-service';
 import { EmailService } from './email-service';
 
@@ -43,7 +43,8 @@ export class WarmupPoolManager {
 
   async initializePools(): Promise<void> {
     try {
-      // Load existing pools from database
+      const supabase = await createClient();
+      // Load existing warmup pools
       const { data: pools, error } = await supabase
         .from('warmup_pools')
         .select('*')
@@ -51,7 +52,7 @@ export class WarmupPoolManager {
 
       if (error) throw error;
 
-      // If no pools exist, create default ones
+      // If no pools exist, create default ones using real emails from database
       if (!pools || pools.length === 0) {
         await this.createDefaultPools();
       } else {
@@ -69,34 +70,36 @@ export class WarmupPoolManager {
   }
 
   private async createDefaultPools(): Promise<void> {
+    const supabase = await createClient();
+    
+    // Fetch real emails from warmup_email_pool
+    const { data: poolEmails, error: emailError } = await supabase
+      .from('warmup_email_pool')
+      .select('email_address')
+      .eq('status', 'active')
+      .eq('mx_verified', true);
+
+    if (emailError) throw emailError;
+
+    const emails = poolEmails?.map(e => e.email_address) || [];
+    
+    // Extract unique domains from emails
+    const domains = [...new Set(emails.map(email => email.split('@')[1]))];
+
     const defaultPools = [
       {
-        name: 'Business Network Pool',
-        emails: this.generatePoolEmails('business', 50),
-        domains: ['biznetwork.com', 'profconnect.net', 'businesshub.org'],
+        name: 'Primary Warmup Pool',
+        emails: emails,
+        domains: domains,
         reputation_score: 85,
-        status: 'active'
-      },
-      {
-        name: 'Tech Industry Pool',
-        emails: this.generatePoolEmails('tech', 40),
-        domains: ['techpool.io', 'devnetwork.com', 'innovators.tech'],
-        reputation_score: 90,
-        status: 'active'
-      },
-      {
-        name: 'Marketing Pool',
-        emails: this.generatePoolEmails('marketing', 30),
-        domains: ['marketers.pro', 'adnetwork.com', 'brandpool.net'],
-        reputation_score: 88,
         status: 'active'
       }
     ];
 
-    for (const pool of defaultPools) {
+    for (const poolData of defaultPools) {
       const { data, error } = await supabase
         .from('warmup_pools')
-        .insert([pool])
+        .insert([poolData])
         .select()
         .single();
 
@@ -105,41 +108,31 @@ export class WarmupPoolManager {
     }
   }
 
-  private generatePoolEmails(category: string, count: number): string[] {
-    const prefixes = {
-      business: ['contact', 'info', 'hello', 'connect', 'network', 'partner'],
-      tech: ['dev', 'tech', 'code', 'build', 'innovate', 'create'],
-      marketing: ['market', 'brand', 'promo', 'campaign', 'growth', 'reach']
-    };
+  /**
+   * Get available warmup emails from database with rotation logic
+   */
+  private async getAvailableWarmupEmails(): Promise<string[]> {
+    const supabase = await createClient();
+    
+    // Fetch active, verified emails with low bounce rates
+    const { data: emails, error } = await supabase
+      .from('warmup_email_pool')
+      .select('email_address, usage_count, last_used_at')
+      .eq('status', 'active')
+      .eq('mx_verified', true)
+      .lt('bounce_rate', 10) // Only use emails with bounce rate < 10%
+      .order('usage_count', { ascending: true }) // Prioritize less-used emails
+      .order('last_used_at', { ascending: true, nullsFirst: true }); // Then by least recently used
 
-    const emails = [];
-    const categoryPrefixes = prefixes[category as keyof typeof prefixes] || prefixes.business;
+    if (error) throw error;
 
-    for (let i = 0; i < count; i++) {
-      const prefix = categoryPrefixes[i % categoryPrefixes.length];
-      const suffix = Math.random().toString(36).substr(2, 6);
-      const domain = this.getRandomDomain(category);
-      emails.push(`${prefix}${suffix}@${domain}`);
-    }
-
-    return emails;
-  }
-
-  private getRandomDomain(category: string): string {
-    const domains = {
-      business: ['biznetwork.com', 'profconnect.net', 'businesshub.org'],
-      tech: ['techpool.io', 'devnetwork.com', 'innovators.tech'],
-      marketing: ['marketers.pro', 'adnetwork.com', 'brandpool.net']
-    };
-
-    const categoryDomains = domains[category as keyof typeof domains] || domains.business;
-    return categoryDomains[Math.floor(Math.random() * categoryDomains.length)];
+    return emails?.map(e => e.email_address) || [];
   }
 
   async getOptimalRecipient(senderEmail: string, campaignType: string): Promise<string> {
     try {
       // Find recipient from appropriate pool
-      const availablePools = Array.from(this.pools.values()).filter(pool => 
+      const availablePools = Array.from(this.pools.values()).filter(pool =>
         pool.status === 'active' && pool.reputation_score > 80
       );
 
@@ -149,10 +142,10 @@ export class WarmupPoolManager {
 
       // Select pool based on campaign type
       const selectedPool = this.selectPoolByCampaignType(availablePools, campaignType);
-      
+
       // Get recipient that hasn't been contacted recently
       const recipient = await this.selectOptimalRecipient(senderEmail, selectedPool);
-      
+
       return recipient;
     } catch (error) {
       console.error('Error getting optimal recipient:', error);
@@ -169,19 +162,28 @@ export class WarmupPoolManager {
     };
 
     const preferredNames = poolPreferences[campaignType as keyof typeof poolPreferences] || [];
-    
+
     for (const name of preferredNames) {
       const pool = pools.find(p => p.name === name);
       if (pool) return pool;
     }
 
     // Fallback to highest reputation pool
-    return pools.reduce((best, current) => 
+    return pools.reduce((best, current) =>
       current.reputation_score > best.reputation_score ? current : best
     );
   }
 
   private async selectOptimalRecipient(senderEmail: string, pool: WarmupPool): Promise<string> {
+    const supabase = await createClient();
+    
+    // Get available warmup emails from database with rotation logic
+    const availableEmails = await this.getAvailableWarmupEmails();
+    
+    if (availableEmails.length === 0) {
+      throw new Error('No available warmup emails in pool');
+    }
+
     // Get recent conversations to avoid over-contacting
     const { data: recentLogs, error } = await supabase
       .from('email_logs')
@@ -192,20 +194,51 @@ export class WarmupPoolManager {
     if (error) throw error;
 
     const recentRecipients = new Set(recentLogs?.map(log => log.recipient) || []);
-    
+
     // Filter out recently contacted emails
-    const availableEmails = pool.emails.filter(email => !recentRecipients.has(email));
+    const filteredEmails = availableEmails.filter(email => !recentRecipients.has(email));
+
+    // Select email (prefer filtered, fallback to least recently used)
+    const selectedEmail = filteredEmails.length > 0 
+      ? filteredEmails[0] // Already sorted by usage_count and last_used_at
+      : availableEmails[0];
+
+    // Update usage tracking
+    await this.updateEmailUsage(selectedEmail);
+
+    return selectedEmail;
+  }
+
+  /**
+   * Update email usage count and last used timestamp
+   */
+  private async updateEmailUsage(email: string): Promise<void> {
+    const supabase = await createClient();
     
-    if (availableEmails.length === 0) {
-      // If all emails were contacted recently, use the oldest one
-      const oldestLog = recentLogs?.sort((a, b) => 
-        new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
-      )[0];
-      return oldestLog?.recipient || pool.emails[0];
+    // Get current usage count
+    const { data: currentData, error: fetchError } = await supabase
+      .from('warmup_email_pool')
+      .select('usage_count')
+      .eq('email_address', email)
+      .single();
+
+    if (fetchError) {
+      console.error('Error fetching email usage:', fetchError);
+      return;
     }
 
-    // Return random available email
-    return availableEmails[Math.floor(Math.random() * availableEmails.length)];
+    // Increment usage count
+    const { error } = await supabase
+      .from('warmup_email_pool')
+      .update({
+        usage_count: (currentData?.usage_count || 0) + 1,
+        last_used_at: new Date().toISOString()
+      })
+      .eq('email_address', email);
+
+    if (error) {
+      console.error('Error updating email usage:', error);
+    }
   }
 
   async createConversation(senderEmail: string, recipientEmail: string): Promise<WarmupConversation> {
@@ -220,9 +253,10 @@ export class WarmupPoolManager {
     };
 
     this.conversations.set(conversation.id, conversation);
-    
+
     // Store in database
-    await supabase
+    const supabase = await createClient();
+    const { error } = await supabase
       .from('warmup_conversations')
       .insert([{
         id: conversation.id,
@@ -231,6 +265,8 @@ export class WarmupPoolManager {
         conversation_data: conversation,
         status: 'active'
       }]);
+
+    if (error) throw error;
 
     return conversation;
   }
@@ -245,7 +281,7 @@ export class WarmupPoolManager {
     }
 
     const aiService = getAIService();
-    
+
     const emailRequest = {
       type: emailType as any,
       context: {
@@ -260,7 +296,7 @@ export class WarmupPoolManager {
     };
 
     const response = await aiService.generateContextualEmail(emailRequest);
-    
+
     // Add to conversation thread
     conversation.conversation_thread.push({
       message_id: `msg_${Date.now()}`,
@@ -276,13 +312,16 @@ export class WarmupPoolManager {
     conversation.last_interaction = new Date().toISOString();
 
     // Update in database
-    await supabase
+    const supabase = await createClient();
+    const { error: updateError } = await supabase
       .from('warmup_conversations')
       .update({
         conversation_data: conversation,
         updated_at: new Date().toISOString()
       })
       .eq('id', conversationId);
+
+    if (updateError) throw updateError;
 
     return {
       subject: response.subject,
@@ -299,6 +338,7 @@ export class WarmupPoolManager {
 
   private async loadActiveConversations(): Promise<void> {
     try {
+      const supabase = await createClient();
       const { data: conversations, error } = await supabase
         .from('warmup_conversations')
         .select('*')
@@ -315,23 +355,86 @@ export class WarmupPoolManager {
     }
   }
 
+  /**
+   * Track bounce for a warmup email and auto-disable if bounce rate is too high
+   */
+  async trackBounce(email: string, bounceReason?: string): Promise<void> {
+    const supabase = await createClient();
+    
+    try {
+      // Get current email stats
+      const { data: emailData, error: fetchError } = await supabase
+        .from('warmup_email_pool')
+        .select('usage_count, bounce_count')
+        .eq('email_address', email)
+        .single();
+
+      if (fetchError || !emailData) {
+        console.error('Email not found in warmup pool:', email);
+        return;
+      }
+
+      const newBounceCount = emailData.bounce_count + 1;
+      const usageCount = emailData.usage_count || 1;
+      const newBounceRate = (newBounceCount / usageCount) * 100;
+
+      // Update bounce tracking
+      const updateData: any = {
+        bounce_count: newBounceCount,
+        bounce_rate: newBounceRate
+      };
+
+      // Auto-disable if bounce rate exceeds 10%
+      if (newBounceRate > 10) {
+        updateData.status = 'inactive';
+        console.warn(`Auto-disabling warmup email ${email} due to high bounce rate: ${newBounceRate.toFixed(1)}%`);
+      }
+
+      const { error: updateError } = await supabase
+        .from('warmup_email_pool')
+        .update(updateData)
+        .eq('email_address', email);
+
+      if (updateError) throw updateError;
+
+    } catch (error) {
+      console.error('Error tracking bounce for warmup email:', error);
+    }
+  }
+
+  /**
+   * Get statistics about warmup pool emails
+   */
   async getPoolStatistics(): Promise<{
     totalPools: number;
     totalEmails: number;
     averageReputation: number;
     activeConversations: number;
+    verifiedEmails: number;
+    activeEmails: number;
   }> {
+    const supabase = await createClient();
+    
+    // Get email pool stats
+    const { data: emailStats, error } = await supabase
+      .from('warmup_email_pool')
+      .select('status, mx_verified');
+
     const pools = Array.from(this.pools.values());
-    const totalEmails = pools.reduce((sum, pool) => sum + pool.emails.length, 0);
-    const averageReputation = pools.length > 0 
-      ? pools.reduce((sum, pool) => sum + pool.reputation_score, 0) / pools.length 
+    const totalEmails = emailStats?.length || 0;
+    const verifiedEmails = emailStats?.filter(e => e.mx_verified).length || 0;
+    const activeEmails = emailStats?.filter(e => e.status === 'active').length || 0;
+    const averageReputation = pools.length > 0
+      ? pools.reduce((sum, pool) => sum + pool.reputation_score, 0) / pools.length
       : 0;
 
     return {
       totalPools: pools.length,
       totalEmails,
       averageReputation: Math.round(averageReputation),
-      activeConversations: this.conversations.size
+      activeConversations: this.conversations.size,
+      verifiedEmails,
+      activeEmails
     };
   }
 }

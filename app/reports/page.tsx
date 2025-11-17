@@ -75,9 +75,9 @@ export default function ReportsPage() {
 
       if (error) throw error;
       setReports(data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading reports:', error);
-      setError('Failed to load reports');
+      setError(`Failed to load reports: ${error.message}`);
     } finally {
       setLoading(false);
     }
